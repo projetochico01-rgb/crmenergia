@@ -696,7 +696,18 @@ create policy crm_profiles_read on public.crm_user_profiles for select to authen
 drop policy if exists crm_profiles_admin_write on public.crm_user_profiles;
 create policy crm_profiles_admin_write on public.crm_user_profiles for all to authenticated using (public.crm_is_admin()) with check (public.crm_is_admin());
 
-drop policy if exists leads_assigned_access on public.leads_pipeline;
+do $$
+declare policy_name text;
+begin
+  for policy_name in
+    select policyname
+    from pg_policies
+    where schemaname = 'public' and tablename = 'leads_pipeline'
+  loop
+    execute format('drop policy %I on public.leads_pipeline', policy_name);
+  end loop;
+end $$;
+
 create policy leads_assigned_access on public.leads_pipeline for all to authenticated
 using (public.crm_is_admin() or assigned_user_id is null or assigned_user_id = auth.uid())
 with check (public.crm_is_admin() or assigned_user_id is null or assigned_user_id = auth.uid());
@@ -714,6 +725,7 @@ using (public.crm_is_admin()) with check (public.crm_is_admin());
 grant usage on schema public to authenticated, service_role;
 grant select, insert, update, delete on all tables in schema public to authenticated, service_role;
 grant usage, select on all sequences in schema public to authenticated, service_role;
+revoke all on table public.leads_pipeline from anon;
 
 revoke all on function public.cadence_start_for_lead(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public.cadence_register_inbound(uuid, timestamptz) from public, anon, authenticated;
