@@ -11,7 +11,8 @@ import {
   ChevronRight,
   Zap,
   UserCheck,
-  MessagesSquare
+  MessagesSquare,
+  ListRestart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -36,6 +37,7 @@ const menuGroups = [
   {
     label: 'Configurações',
     items: [
+      { icon: ListRestart, label: 'Cadência', href: '/settings/cadence' },
       { icon: Zap, label: 'Automações', href: '/automations' },
       { icon: Settings, label: 'Configurações', href: '/settings' },
     ]

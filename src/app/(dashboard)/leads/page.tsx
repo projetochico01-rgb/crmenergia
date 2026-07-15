@@ -2,592 +2,228 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Calendar,
-  DollarSign,
+  Bot,
+  CalendarClock,
+  CircleDollarSign,
   Download,
-  ExternalLink,
-  Filter,
+  GripVertical,
   Loader2,
-  Mail,
+  MessageSquareText,
   Phone,
   Plus,
   RefreshCw,
-  Save,
   Search,
-  Trash2,
+  ShieldAlert,
+  UserRound,
   Users,
   X,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 
-type LeadStatus =
-  | 'novo'
-  | 'em_atendimento_ia'
-  | 'atendimento_humano'
-  | 'analise_fatura'
-  | 'contrato_enviado'
-  | 'fechado'
-  | 'perdido';
+type CommercialStage = 'novo' | 'contato' | 'qualificado' | 'proposta' | 'negociacao' | 'fechado' | 'perdido';
+type CadenceStatus = 'inactive' | 'waiting' | 'active' | 'responded' | 'completed' | 'paused' | 'cancelled' | 'blocked';
 
 type Lead = {
   id: string;
   name: string;
   email: string | null;
   phone: string | null;
-  status: LeadStatus | null;
+  status: string | null;
   origem: string | null;
   value: number | null;
   created_at: string | null;
+  stage_entered_at?: string | null;
+  assigned_user_id?: string | null;
+  utm_campaign?: string | null;
+  intervencao_humana?: boolean | null;
+  human_handoff?: boolean | null;
+  ai_enabled?: boolean;
+  cadence_status?: CadenceStatus;
+  automation_contact_allowed?: boolean;
+  do_not_contact_reason?: string | null;
 };
 
-const statusConfig: Record<LeadStatus, { label: string; className: string }> = {
-  novo: { label: 'Novo', className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-  em_atendimento_ia: { label: 'Em Atendimento IA', className: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
-  atendimento_humano: { label: 'Atendimento Humano', className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' },
-  analise_fatura: { label: 'Analise Fatura', className: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
-  contrato_enviado: { label: 'Contrato Enviado', className: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
-  fechado: { label: 'Fechado', className: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  perdido: { label: 'Perdido', className: 'bg-red-500/10 text-red-400 border-red-500/20' },
+const stages: Array<{ id: CommercialStage; label: string; dot: string }> = [
+  { id: 'novo', label: 'Novo', dot: 'bg-sky-400' },
+  { id: 'contato', label: 'Contato', dot: 'bg-cyan-400' },
+  { id: 'qualificado', label: 'Qualificado', dot: 'bg-violet-400' },
+  { id: 'proposta', label: 'Proposta', dot: 'bg-indigo-400' },
+  { id: 'negociacao', label: 'Negociação', dot: 'bg-amber-400' },
+  { id: 'fechado', label: 'Fechado', dot: 'bg-emerald-400' },
+  { id: 'perdido', label: 'Perdido', dot: 'bg-rose-400' },
+];
+
+const legacyStage: Record<string, CommercialStage> = {
+  em_atendimento_ia: 'contato',
+  atendimento_humano: 'contato',
+  analise_fatura: 'qualificado',
+  contrato_enviado: 'proposta',
 };
 
-const emptyForm = {
-  first_name: '',
-  last_name: '',
-  email: '',
-  phone: '',
-  status: 'novo' as LeadStatus,
-  source: 'whatsapp',
-  value: 0,
+const cadenceLabel: Record<CadenceStatus, string> = {
+  inactive: 'Sem cadência', waiting: 'Aguardando', active: 'Em cadência', responded: 'Respondeu',
+  completed: 'Concluída', paused: 'Pausada', cancelled: 'Cancelada', blocked: 'Bloqueada',
 };
 
-function splitName(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return {
-    first_name: parts[0] ?? '',
-    last_name: parts.slice(1).join(' '),
-  };
+const emptyForm = { name: '', email: '', phone: '', origem: 'whatsapp', value: 0, status: 'novo' as CommercialStage };
+
+function stageOf(lead: Lead): CommercialStage {
+  const value = lead.status ?? 'novo';
+  return stages.some((stage) => stage.id === value) ? value as CommercialStage : legacyStage[value] ?? 'novo';
 }
 
-function formatDate(date: string | null) {
-  return date ? new Date(date).toLocaleDateString('pt-BR') : '-';
+function formatMoney(value: number | null) {
+  return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function buildPipelinePayload(formData: typeof emptyForm) {
-  return {
-    name: `${formData.first_name} ${formData.last_name}`.trim(),
-    email: formData.email || null,
-    phone: formData.phone || null,
-    status: formData.status,
-    origem: formData.source || 'whatsapp',
-    value: Number(formData.value) || 0,
-    utm_source: formData.source || 'whatsapp',
-    utm_medium: 'crm_manual',
-    utm_campaign: 'cadastro_manual',
-    intervencao_humana: true,
-  };
+function elapsed(value: string | null | undefined) {
+  if (!value) return 'agora';
+  const hours = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 3_600_000));
+  if (hours < 24) return `${hours}h nesta etapa`;
+  return `${Math.floor(hours / 24)}d nesta etapa`;
 }
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingLead, setEditingLead] = useState<Lead | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [formData, setFormData] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropStage, setDropStage] = useState<CommercialStage | null>(null);
+  const [search, setSearch] = useState('');
+  const [source, setSource] = useState('all');
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Lead | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState(emptyForm);
 
   const fetchLeads = useCallback(async () => {
-    try {
-      setLoading(true);
-      setErrorMessage(null);
-
-      const { data, error } = await supabase
-        .from('leads_pipeline')
-        .select('id,name,email,phone,status,origem,value,created_at')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setLeads((data ?? []) as Lead[]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Nao foi possivel carregar leads.';
-      setErrorMessage(message);
-      console.error('Error fetching leads:', error);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    setFeedback(null);
+    const { data, error } = await supabase.from('leads_pipeline').select('*').order('created_at', { ascending: false });
+    if (error) setFeedback(error.message);
+    else setLeads((data ?? []) as Lead[]);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchLeads();
-    }, 0);
-
+    const timer = window.setTimeout(() => void fetchLeads(), 0);
     return () => window.clearTimeout(timer);
   }, [fetchLeads]);
 
-  useEffect(() => {
-    const originalStyle = window.getComputedStyle(document.body).overflow;
+  const sources = useMemo(() => Array.from(new Set(leads.map((lead) => lead.origem).filter(Boolean))) as string[], [leads]);
+  const visible = useMemo(() => leads.filter((lead) => {
+    const haystack = `${lead.name} ${lead.phone ?? ''} ${lead.email ?? ''} ${lead.utm_campaign ?? ''}`.toLowerCase();
+    return haystack.includes(search.toLowerCase()) && (source === 'all' || lead.origem === source);
+  }), [leads, search, source]);
 
-    if (isModalOpen) {
-      document.body.style.overflow = 'hidden';
-      document.body.style.paddingRight = `${window.innerWidth - document.documentElement.clientWidth}px`;
-    } else {
-      document.body.style.overflow = originalStyle;
-      document.body.style.paddingRight = '0px';
-    }
+  async function moveLead(leadId: string, nextStage: CommercialStage) {
+    const lead = leads.find((item) => item.id === leadId);
+    if (!lead || stageOf(lead) === nextStage) return;
+    const previous = stageOf(lead);
+    const enteredAt = new Date().toISOString();
+    setLeads((current) => current.map((item) => item.id === leadId ? { ...item, status: nextStage, stage_entered_at: enteredAt } : item));
+    setFeedback(null);
 
-    return () => {
-      document.body.style.overflow = originalStyle;
-      document.body.style.paddingRight = '0px';
-    };
-  }, [isModalOpen]);
-
-  const filteredLeads = useMemo(
-    () =>
-      leads.filter((lead) =>
-        `${lead.name} ${lead.email ?? ''} ${lead.phone ?? ''} ${lead.origem ?? ''}`
-          .toLowerCase()
-          .includes(searchQuery.toLowerCase()),
-      ),
-    [leads, searchQuery],
-  );
-
-  function handleOpenModal(lead?: Lead) {
-    if (lead) {
-      const nameParts = splitName(lead.name);
-      setEditingLead(lead);
-      setFormData({
-        first_name: nameParts.first_name,
-        last_name: nameParts.last_name,
-        email: lead.email ?? '',
-        phone: lead.phone ?? '',
-        status: lead.status ?? 'novo',
-        source: lead.origem ?? 'whatsapp',
-        value: Number(lead.value ?? 0),
+    const { error: updateError } = await supabase.from('leads_pipeline').update({ status: nextStage, stage_entered_at: enteredAt }).eq('id', leadId);
+    if (!updateError) {
+      const { data: auth } = await supabase.auth.getUser();
+      const { error: historyError } = await supabase.from('lead_stage_history').insert({
+        lead_id: leadId, from_stage: previous, to_stage: nextStage, changed_by: auth.user?.id ?? null, reason: 'kanban_drag_drop',
       });
-    } else {
-      setEditingLead(null);
-      setFormData(emptyForm);
+      if (!historyError) return;
+      setFeedback(`Etapa alterada, mas o histórico não foi gravado: ${historyError.message}`);
+      return;
     }
 
-    setErrorMessage(null);
-    setIsModalOpen(true);
+    setLeads((current) => current.map((item) => item.id === leadId ? lead : item));
+    setFeedback(`Não foi possível mover ${lead.name}. O cartão voltou para ${stages.find((item) => item.id === previous)?.label}. ${updateError.message}`);
   }
 
-  async function handleSave(event: React.FormEvent) {
+  async function createLead(event: React.FormEvent) {
     event.preventDefault();
-    setIsSaving(true);
-    setErrorMessage(null);
-
-    try {
-      const payload = buildPipelinePayload(formData);
-
-      if (!payload.name) {
-        throw new Error('Informe ao menos o nome do lead.');
-      }
-
-      if (editingLead) {
-        const { error } = await supabase
-          .from('leads_pipeline')
-          .update(payload)
-          .eq('id', editingLead.id);
-
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('leads_pipeline').insert([payload]);
-        if (error) throw error;
-      }
-
-      await fetchLeads();
-      setIsModalOpen(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Nao foi possivel salvar o lead.';
-      setErrorMessage(message);
-      console.error('Error saving lead:', error);
-    } finally {
-      setIsSaving(false);
-    }
+    setSaving(true);
+    const { error } = await supabase.from('leads_pipeline').insert({
+      name: form.name.trim(), email: form.email || null, phone: form.phone || null, origem: form.origem,
+      value: Number(form.value) || 0, status: form.status, utm_source: form.origem, utm_medium: 'crm_manual',
+      utm_campaign: 'cadastro_manual', intervencao_humana: true,
+    });
+    setSaving(false);
+    if (error) return setFeedback(error.message);
+    setCreating(false);
+    setForm(emptyForm);
+    await fetchLeads();
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Tem certeza que deseja excluir este lead?')) return;
-
-    try {
-      const { error } = await supabase.from('leads_pipeline').delete().eq('id', id);
-      if (error) throw error;
-      setLeads((current) => current.filter((lead) => lead.id !== id));
-      if (editingLead?.id === id) setIsModalOpen(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Nao foi possivel excluir o lead.';
-      setErrorMessage(message);
-      console.error('Error deleting lead:', error);
-    }
-  }
-
-  function handleExportCSV() {
-    if (leads.length === 0) return;
-
-    const headers = ['Nome', 'Email', 'Telefone', 'Status', 'Origem', 'Valor', 'Data'];
-    const csvRows = [
-      headers.join(';'),
-      ...leads.map((lead) =>
-        [
-          lead.name.replace(/;/g, ' '),
-          lead.email ?? '',
-          lead.phone ?? '',
-          lead.status ? statusConfig[lead.status]?.label ?? lead.status : '',
-          (lead.origem ?? '').replace(/;/g, ' '),
-          String(lead.value ?? 0).replace('.', ','),
-          formatDate(lead.created_at),
-        ].join(';'),
-      ),
-    ];
-
-    const blob = new Blob([`\uFEFF${csvRows.join('\r\n')}`], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+  function exportCsv() {
+    const header = ['Nome', 'Telefone', 'Email', 'Etapa', 'Origem', 'Campanha', 'Valor'];
+    const rows = visible.map((lead) => [lead.name, lead.phone ?? '', lead.email ?? '', stageOf(lead), lead.origem ?? '', lead.utm_campaign ?? '', lead.value ?? 0]);
+    const safe = (value: unknown) => `"${String(value).replaceAll('"', '""')}"`;
+    const blob = new Blob([`\uFEFF${[header, ...rows].map((row) => row.map(safe).join(';')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-
-    link.setAttribute('href', url);
-    link.setAttribute('download', `leads-behub-${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const anchor = document.createElement('a');
+    anchor.href = url; anchor.download = `leads-behub-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-5">
+      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Users className="w-6 h-6 text-blue-500" />
-            Gestao de Leads
-          </h1>
-          <p className="text-slate-400 text-sm">Leads gravados diretamente na tabela leads_pipeline.</p>
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-amber-400"><Users className="h-4 w-4" /> Pipeline comercial</div>
+          <h1 className="text-3xl font-bold text-white">Leads em movimento</h1>
+          <p className="mt-1 text-sm text-slate-400">Arraste os cartões entre as etapas. IA, atendimento humano e cadência são controles separados.</p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-900 border border-slate-800 text-slate-300 rounded-xl hover:bg-slate-800 transition-all text-sm active:scale-95"
-          >
-            <Download className="w-4 h-4" />
-            Exportar
-          </button>
-          <button
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-95 font-medium text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Novo Lead
-          </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={exportCsv} className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-200 hover:border-slate-500"><Download className="h-4 w-4" /> Exportar</button>
+          <button onClick={() => setCreating(true)} className="flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-300"><Plus className="h-4 w-4" /> Novo lead</button>
         </div>
-      </div>
+      </header>
 
-      <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row gap-4 items-center">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input
-            type="text"
-            placeholder="Buscar por nome, email, telefone ou origem..."
-            className="w-full bg-slate-950 border border-slate-800 text-white pl-10 pr-4 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-          />
-        </div>
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <button className="flex items-center gap-2 px-4 py-2 bg-slate-950 border border-slate-800 text-slate-400 rounded-xl hover:text-white transition-all text-sm w-full md:w-auto justify-center">
-            <Filter className="w-4 h-4" />
-            Filtros
-          </button>
-          <button
-            onClick={fetchLeads}
-            className="p-2 bg-slate-950 border border-slate-800 text-slate-400 rounded-xl hover:text-white transition-all"
-          >
-            <RefreshCw className={cn('w-5 h-5', loading && 'animate-spin')} />
-          </button>
-        </div>
-      </div>
+      <section className="grid gap-3 md:grid-cols-3">
+        <Metric label="Leads no funil" value={visible.length.toString()} icon={Users} />
+        <Metric label="Valor potencial" value={formatMoney(visible.reduce((sum, lead) => sum + Number(lead.value ?? 0), 0))} icon={CircleDollarSign} />
+        <Metric label="Não incomodar" value={visible.filter((lead) => lead.automation_contact_allowed === false).length.toString()} icon={ShieldAlert} danger />
+      </section>
 
-      {errorMessage && (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {errorMessage}
-        </div>
-      )}
+      <section className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3 md:flex-row">
+        <label className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar nome, telefone, email ou campanha" className="h-11 w-full rounded-xl border border-slate-800 bg-slate-950 pl-10 pr-3 text-sm text-white outline-none focus:border-amber-400" /></label>
+        <select value={source} onChange={(event) => setSource(event.target.value)} className="h-11 rounded-xl border border-slate-800 bg-slate-950 px-3 text-sm text-white outline-none"><option value="all">Todas as origens</option>{sources.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+        <button onClick={() => void fetchLeads()} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-4 text-sm text-slate-300"><RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} /> Atualizar</button>
+      </section>
 
-      <div className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-950/50 border-b border-slate-800">
-                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Lead</th>
-                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Origem</th>
-                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Valor</th>
-                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Data</th>
-                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="p-12 text-center">
-                    <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto mb-2" />
-                    <p className="text-slate-500 text-sm font-medium">Carregando leads...</p>
-                  </td>
-                </tr>
-              ) : filteredLeads.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-12 text-center">
-                    <Users className="w-12 h-12 text-slate-800 mx-auto mb-3" />
-                    <p className="text-slate-400 font-medium">Nenhum lead encontrado</p>
-                    <p className="text-slate-600 text-sm">Tente mudar os filtros ou cadastrar um novo lead.</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredLeads.map((lead) => {
-                  const nameParts = splitName(lead.name);
-                  return (
-                    <tr key={lead.id} className="hover:bg-slate-800/30 transition-colors group">
-                      <td className="p-4" onClick={() => handleOpenModal(lead)}>
-                        <div className="flex items-center gap-3 cursor-pointer">
-                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/50 flex items-center justify-center text-slate-400 group-hover:text-blue-400 transition-all font-bold uppercase tracking-tighter">
-                            {nameParts.first_name[0]}
-                            {nameParts.last_name[0] ?? ''}
-                          </div>
-                          <div>
-                            <div className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">
-                              {lead.name}
-                            </div>
-                            <div className="flex items-center gap-3 mt-1">
-                              <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                                <Mail className="w-3 h-3" />
-                                {lead.email ?? '-'}
-                              </span>
-                              <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                                <Phone className="w-3 h-3" />
-                                {lead.phone ?? '-'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <span
-                          className={cn(
-                            'text-[10px] font-bold px-2 py-1 rounded-lg border',
-                            lead.status
-                              ? statusConfig[lead.status]?.className
-                              : 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-                          )}
-                        >
-                          {lead.status ? statusConfig[lead.status]?.label ?? lead.status : '-'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-sm text-slate-400 font-medium">{lead.origem ?? '-'}</td>
-                      <td className="p-4">
-                        <div className="text-sm font-bold text-emerald-400">
-                          R$ {Number(lead.value ?? 0).toLocaleString('pt-BR')}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <Calendar className="w-3.5 h-3.5" />
-                          {formatDate(lead.created_at)}
-                        </div>
-                      </td>
-                      <td className="p-4 text-right">
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleOpenModal(lead)}
-                            className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-all"
-                            title="Editar lead"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(lead.id)}
-                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
-                            title="Excluir lead"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {feedback && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{feedback}</div>}
 
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsModalOpen(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-md z-[100]"
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-[#0f172a] border border-slate-700 rounded-3xl shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[90vh] z-[101]"
-            >
-              <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-slate-900 to-slate-950">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-600/20 flex items-center justify-center text-blue-500 border border-blue-500/20">
-                    <Plus className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white">{editingLead ? 'Editar Lead' : 'Novo Lead'}</h2>
-                    <p className="text-xs text-slate-500">Salvando em leads_pipeline.</p>
-                  </div>
+      <section className="overflow-x-auto pb-3 custom-scrollbar">
+        <div className="flex min-w-max gap-3">
+          {stages.map((stage) => {
+            const cards = visible.filter((lead) => stageOf(lead) === stage.id);
+            return (
+              <div key={stage.id} onDragOver={(event) => { event.preventDefault(); setDropStage(stage.id); }} onDragLeave={() => setDropStage(null)} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData('text/lead-id') || draggedId; setDropStage(null); setDraggedId(null); if (id) void moveLead(id, stage.id); }} className={cn('w-80 rounded-2xl border bg-slate-950/70 p-3 transition', dropStage === stage.id ? 'border-amber-400/70 bg-amber-400/5' : 'border-slate-800')}>
+                <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><span className={cn('h-2.5 w-2.5 rounded-full', stage.dot)} /><h2 className="font-semibold text-white">{stage.label}</h2></div><span className="rounded-lg bg-slate-900 px-2 py-1 text-xs text-slate-400">{cards.length}</span></div>
+                <div className="min-h-32 space-y-2">
+                  {loading ? <div className="flex h-28 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-amber-400" /></div> : cards.length === 0 ? <div className="flex h-28 items-center justify-center rounded-xl border border-dashed border-slate-800 text-xs text-slate-600">Solte um lead aqui</div> : cards.map((lead) => <LeadCard key={lead.id} lead={lead} onOpen={() => setSelected(lead)} onDragStart={(event) => { setDraggedId(lead.id); event.dataTransfer.setData('text/lead-id', lead.id); event.dataTransfer.effectAllowed = 'move'; }} />)}
                 </div>
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="p-2 text-slate-500 hover:text-white hover:bg-slate-800 rounded-xl transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
               </div>
+            );
+          })}
+        </div>
+      </section>
 
-              <div className="overflow-y-auto flex-1 custom-scrollbar">
-                <form onSubmit={handleSave} className="p-6 space-y-4">
-                  {errorMessage && (
-                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-                      {errorMessage}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Nome">
-                      <input
-                        required
-                        type="text"
-                        className="w-full bg-slate-950 border border-slate-800 text-white p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
-                        placeholder="Ex: Jorge"
-                        value={formData.first_name}
-                        onChange={(event) => setFormData({ ...formData, first_name: event.target.value })}
-                      />
-                    </Field>
-                    <Field label="Sobrenome">
-                      <input
-                        type="text"
-                        className="w-full bg-slate-950 border border-slate-800 text-white p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
-                        placeholder="Ex: Cardoso"
-                        value={formData.last_name}
-                        onChange={(event) => setFormData({ ...formData, last_name: event.target.value })}
-                      />
-                    </Field>
-                  </div>
-
-                  <Field label="Email">
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                      <input
-                        type="email"
-                        className="w-full bg-slate-950 border border-slate-800 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
-                        placeholder="jorge@email.com"
-                        value={formData.email}
-                        onChange={(event) => setFormData({ ...formData, email: event.target.value })}
-                      />
-                    </div>
-                  </Field>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Telefone">
-                      <div className="relative">
-                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                        <input
-                          type="text"
-                          className="w-full bg-slate-950 border border-slate-800 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
-                          placeholder="47984595965"
-                          value={formData.phone}
-                          onChange={(event) => setFormData({ ...formData, phone: event.target.value })}
-                        />
-                      </div>
-                    </Field>
-                    <Field label="Valor (R$)">
-                      <div className="relative">
-                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
-                        <input
-                          type="number"
-                          className="w-full bg-slate-950 border border-slate-800 text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
-                          placeholder="650"
-                          value={formData.value}
-                          onChange={(event) => setFormData({ ...formData, value: Number(event.target.value) })}
-                        />
-                      </div>
-                    </Field>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Status">
-                      <select
-                        className="w-full bg-slate-950 border border-slate-800 text-white p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm appearance-none cursor-pointer"
-                        value={formData.status}
-                        onChange={(event) => setFormData({ ...formData, status: event.target.value as LeadStatus })}
-                      >
-                        {Object.entries(statusConfig).map(([key, config]) => (
-                          <option key={key} value={key}>
-                            {config.label}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Origem">
-                      <input
-                        type="text"
-                        className="w-full bg-slate-950 border border-slate-800 text-white p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
-                        placeholder="whatsapp"
-                        value={formData.source}
-                        onChange={(event) => setFormData({ ...formData, source: event.target.value })}
-                      />
-                    </Field>
-                  </div>
-
-                  <div className="pt-4 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setIsModalOpen(false)}
-                      className="flex-1 px-4 py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 transition-all font-bold text-sm"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSaving}
-                      className="flex-[2] px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                    >
-                      {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      {editingLead ? 'Salvar Alteracoes' : 'Criar Lead'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {(selected || creating) && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"><div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"><div className="flex items-center justify-between border-b border-slate-800 p-5"><div><p className="text-xs uppercase tracking-[0.2em] text-amber-400">{creating ? 'Cadastro manual' : 'Detalhes do lead'}</p><h2 className="mt-1 text-xl font-bold text-white">{creating ? 'Novo lead' : selected?.name}</h2></div><button onClick={() => { setSelected(null); setCreating(false); }} className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-5 w-5" /></button></div>{creating ? <form onSubmit={createLead} className="grid gap-4 p-5 md:grid-cols-2"><Input label="Nome" required value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input label="Telefone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} /><Input label="Email" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><Input label="Origem" value={form.origem} onChange={(value) => setForm({ ...form, origem: value })} /><Input label="Valor" type="number" value={String(form.value)} onChange={(value) => setForm({ ...form, value: Number(value) })} /><label className="space-y-1 text-xs font-semibold uppercase text-slate-500">Etapa<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as CommercialStage })} className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-sm normal-case text-white">{stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label><button disabled={saving} className="md:col-span-2 flex h-11 items-center justify-center gap-2 rounded-xl bg-amber-400 font-bold text-slate-950 disabled:opacity-60">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Salvar lead</button></form> : selected && <LeadDetails lead={selected} />}</div></div>}
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">{label}</label>
-      {children}
-    </div>
-  );
+function LeadCard({ lead, onOpen, onDragStart }: { lead: Lead; onOpen: () => void; onDragStart: (event: React.DragEvent<HTMLDivElement>) => void }) {
+  const blocked = lead.automation_contact_allowed === false;
+  const handoff = lead.human_handoff ?? lead.intervencao_humana ?? false;
+  const cadence = lead.cadence_status ?? 'inactive';
+  return <div draggable onDragStart={onDragStart} onClick={onOpen} className={cn('cursor-grab rounded-xl border p-3 shadow-lg transition active:cursor-grabbing', blocked ? 'border-rose-500/60 bg-rose-500/10' : 'border-slate-800 bg-slate-900 hover:border-slate-600')}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold text-white">{lead.name}</p><p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><Phone className="h-3 w-3" /> {lead.phone ?? 'Sem telefone'}</p></div><GripVertical className="h-5 w-5 shrink-0 text-slate-600" /></div><div className="mt-3 flex flex-wrap gap-1.5"><Badge icon={Bot} label={handoff ? 'Humano' : lead.ai_enabled === false ? 'IA pausada' : 'IA ativa'} tone={handoff ? 'amber' : 'emerald'} /><Badge icon={MessageSquareText} label={cadenceLabel[cadence]} tone={cadence === 'active' || cadence === 'waiting' ? 'cyan' : 'slate'} />{blocked && <Badge icon={ShieldAlert} label="Não incomodar" tone="rose" />}</div><div className="mt-3 flex items-end justify-between border-t border-slate-800 pt-3"><div><p className="text-[10px] uppercase text-slate-600">{lead.utm_campaign || lead.origem || 'Sem campanha'}</p><p className="mt-1 text-xs text-slate-400">{elapsed(lead.stage_entered_at ?? lead.created_at)}</p></div><p className="text-sm font-bold text-emerald-300">{formatMoney(lead.value)}</p></div></div>;
 }
+
+function Badge({ icon: Icon, label, tone }: { icon: typeof Bot; label: string; tone: 'amber' | 'emerald' | 'cyan' | 'rose' | 'slate' }) { const colors = { amber: 'border-amber-400/20 bg-amber-400/10 text-amber-200', emerald: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200', cyan: 'border-cyan-400/20 bg-cyan-400/10 text-cyan-200', rose: 'border-rose-400/30 bg-rose-400/10 text-rose-200', slate: 'border-slate-700 bg-slate-950 text-slate-400' }; return <span className={cn('flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium', colors[tone])}><Icon className="h-3 w-3" />{label}</span>; }
+function Metric({ label, value, icon: Icon, danger }: { label: string; value: string; icon: typeof Users; danger?: boolean }) { return <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4"><div className="flex items-center justify-between"><div><p className="text-xs uppercase tracking-wider text-slate-500">{label}</p><p className={cn('mt-2 text-2xl font-bold', danger ? 'text-rose-300' : 'text-white')}>{value}</p></div><Icon className={cn('h-6 w-6', danger ? 'text-rose-400' : 'text-amber-400')} /></div></div>; }
+function Input({ label, value, onChange, type = 'text', required }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean }) { return <label className="space-y-1 text-xs font-semibold uppercase text-slate-500">{label}<input required={required} type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-sm normal-case text-white outline-none focus:border-amber-400" /></label>; }
+function LeadDetails({ lead }: { lead: Lead }) { const blocked = lead.automation_contact_allowed === false; return <div className="space-y-4 p-5">{blocked && <div className="rounded-xl border border-rose-500/50 bg-rose-500/10 p-4 text-sm text-rose-100"><div className="flex items-center gap-2 font-bold"><ShieldAlert className="h-5 w-5" /> Este lead pediu para não ser incomodado</div><p className="mt-2 text-rose-200/80">IA e cadência bloqueadas. Mensagens manuais continuam disponíveis com este alerta visível.</p>{lead.do_not_contact_reason && <p className="mt-2 text-xs">Motivo: {lead.do_not_contact_reason}</p>}</div>}<div className="grid gap-3 md:grid-cols-2"><Detail label="Telefone" value={lead.phone} icon={Phone} /><Detail label="Email" value={lead.email} icon={UserRound} /><Detail label="Campanha" value={lead.utm_campaign} icon={MessageSquareText} /><Detail label="Tempo na etapa" value={elapsed(lead.stage_entered_at ?? lead.created_at)} icon={CalendarClock} /></div><div className="rounded-xl border border-slate-800 bg-slate-900 p-4"><p className="text-xs uppercase tracking-wider text-slate-500">Controles independentes</p><div className="mt-3 flex flex-wrap gap-2"><Badge icon={Bot} label={lead.human_handoff ? 'Atendimento humano' : lead.ai_enabled === false ? 'IA pausada' : 'IA ativa'} tone={lead.human_handoff ? 'amber' : 'emerald'} /><Badge icon={MessageSquareText} label={cadenceLabel[lead.cadence_status ?? 'inactive']} tone="cyan" /></div></div></div>; }
+function Detail({ label, value, icon: Icon }: { label: string; value: string | null | undefined; icon: typeof Phone }) { return <div className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="flex items-center gap-2 text-xs text-slate-500"><Icon className="h-4 w-4" />{label}</p><p className="mt-2 truncate text-sm font-medium text-white">{value || '-'}</p></div>; }

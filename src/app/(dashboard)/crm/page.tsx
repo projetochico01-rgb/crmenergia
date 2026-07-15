@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LeadPipelineStatus, LeadsPipeline } from "@/types/database";
+import { supabase } from "@/lib/supabase";
 
 type ConversationRole = "user" | "assistant" | "system";
 
@@ -71,139 +72,29 @@ type EvolutionMessage = {
 
 const stages: Array<{ id: LeadPipelineStatus; label: string; tone: string }> = [
   { id: "novo", label: "Novo", tone: "bg-sky-500" },
-  { id: "em_atendimento_ia", label: "IA atendendo", tone: "bg-cyan-400" },
-  { id: "atendimento_humano", label: "Humano", tone: "bg-amber-400" },
-  { id: "analise_fatura", label: "Analise fatura", tone: "bg-violet-400" },
-  { id: "contrato_enviado", label: "Contrato", tone: "bg-indigo-400" },
+  { id: "contato", label: "Contato", tone: "bg-cyan-400" },
+  { id: "qualificado", label: "Qualificado", tone: "bg-violet-400" },
+  { id: "proposta", label: "Proposta", tone: "bg-indigo-400" },
+  { id: "negociacao", label: "Negociação", tone: "bg-amber-400" },
   { id: "fechado", label: "Fechado", tone: "bg-emerald-400" },
   { id: "perdido", label: "Perdido", tone: "bg-rose-400" },
 ];
 
-const leads: LeadsPipeline[] = [
-  {
-    id: "8ea8a444-37c1-4c5a-98b1-8844dce00111",
-    name: "Marina Costa",
-    value: 640,
-    status: "novo",
-    deadline: "2026-06-08",
-    created_at: "2026-06-06T12:21:00Z",
-    observations: "Lead veio da landing page de economia solar. Pediu simulacao residencial.",
-    phone: "5511991110001",
-    utm_source: "google",
-    utm_medium: "cpc",
-    utm_campaign: "solar_junho",
-    os: "Android",
-    navegador: "Chrome",
-    dispositivo: "mobile",
-    intervencao_humana: false,
-    email: "marina@exemplo.com",
-    cidade: "Sao Paulo",
-    origem: "Landing Page",
-    score: 87,
-  },
-  {
-    id: "8ea8a444-37c1-4c5a-98b1-8844dce00222",
-    name: "Roberto Lima",
-    value: 1120,
-    status: "em_atendimento_ia",
-    deadline: "2026-06-09",
-    created_at: "2026-06-06T13:05:00Z",
-    observations: "Cliente comercial, conta alta, pediu retorno ainda hoje.",
-    phone: "5511982220002",
-    utm_source: "meta",
-    utm_medium: "paid_social",
-    utm_campaign: "whatsapp_direto",
-    os: "iOS",
-    navegador: "Safari",
-    dispositivo: "mobile",
-    intervencao_humana: false,
-    email: "roberto@empresa.com",
-    cidade: "Guarulhos",
-    origem: "WhatsApp",
-    score: 92,
-  },
-  {
-    id: "8ea8a444-37c1-4c5a-98b1-8844dce00333",
-    name: "Ana Paula Reis",
-    value: 430,
-    status: "atendimento_humano",
-    deadline: "2026-06-07",
-    created_at: "2026-06-06T14:18:00Z",
-    observations: "Solicitou explicacao sobre contrato e prazo de instalacao.",
-    phone: "5511973330003",
-    utm_source: "organico",
-    utm_medium: "direto",
-    utm_campaign: "nenhuma",
-    os: "Windows",
-    navegador: "Edge",
-    dispositivo: "desktop",
-    intervencao_humana: true,
-    email: "ana.reis@exemplo.com",
-    cidade: "Santo Andre",
-    origem: "Site",
-    score: 73,
-  },
-  {
-    id: "8ea8a444-37c1-4c5a-98b1-8844dce00444",
-    name: "Casa Verde Energia",
-    value: 1880,
-    status: "contrato_enviado",
-    deadline: "2026-06-10",
-    created_at: "2026-06-05T19:40:00Z",
-    observations: "Decisor pediu contrato para revisao com socio.",
-    phone: "5511964440004",
-    utm_source: "linkedin",
-    utm_medium: "social",
-    utm_campaign: "b2b_solar",
-    os: "macOS",
-    navegador: "Chrome",
-    dispositivo: "desktop",
-    intervencao_humana: true,
-    email: "contato@casaverde.com",
-    cidade: "Campinas",
-    origem: "Indicacao",
-    score: 95,
-  },
-];
+const legacyStages: Record<string, LeadPipelineStatus> = {
+  em_atendimento_ia: "contato", atendimento_humano: "contato",
+  analise_fatura: "qualificado", contrato_enviado: "proposta",
+};
 
-const fallbackContacts: Contact[] = leads.map((lead) => ({
-  telefone: lead.phone ?? "",
-  remoteJid: `${lead.phone ?? ""}@s.whatsapp.net`,
-  nome_perfil: lead.name,
-  lastMessageAt: lead.created_at ?? new Date().toISOString(),
-  aiPaused: Boolean(lead.intervencao_humana),
-}));
+function commercialStage(status: LeadPipelineStatus | null) {
+  return legacyStages[status ?? "novo"] ?? status ?? "novo";
+}
 
-const fallbackMessages: Message[] = [
-  {
-    id: "m1",
-    telefone_cliente: "5511991110001",
-    papel: "user",
-    mensagem: "Oi, queria saber se energia solar funciona para casa pequena.",
-    criado_em: "2026-06-06T12:22:00Z",
-  },
-  {
-    id: "m2",
-    telefone_cliente: "5511991110001",
-    papel: "assistant",
-    mensagem: "Funciona sim. Me diga sua media de conta de luz para eu estimar a economia.",
-    criado_em: "2026-06-06T12:22:20Z",
-  },
-  {
-    id: "m3",
-    telefone_cliente: "5511991110001",
-    papel: "user",
-    mensagem: "Pago perto de 640 reais por mes.",
-    criado_em: "2026-06-06T12:24:00Z",
-  },
-  {
-    id: "m4",
-    telefone_cliente: "5511973330003",
-    papel: "human",
-    mensagem: "Ana, vou assumir por aqui e te explicar os proximos passos do contrato.",
-    criado_em: "2026-06-06T14:21:00Z",
-  },
-];
+const emptyLead: LeadsPipeline = {
+  id: "", name: "Nenhum lead selecionado", value: null, status: "novo", deadline: null,
+  created_at: null, observations: null, phone: null, utm_source: null, utm_medium: null,
+  utm_campaign: null, os: null, navegador: null, dispositivo: null, intervencao_humana: false,
+  email: null, cidade: null, origem: null, score: null,
+};
 
 const pauseOptions = [
   { label: "1h", seconds: 3600 },
@@ -236,10 +127,11 @@ function roleLabel(role: Message["papel"]) {
 }
 
 export default function CRMPage() {
-  const [contacts, setContacts] = useState<Contact[]>(fallbackContacts);
-  const [chatMessages, setChatMessages] = useState<Message[]>(fallbackMessages);
-  const [selectedPhone, setSelectedPhone] = useState(fallbackContacts[0].telefone);
-  const [selectedRemoteJid, setSelectedRemoteJid] = useState(fallbackContacts[0].remoteJid);
+  const [leads, setLeads] = useState<LeadsPipeline[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [chatMessages, setChatMessages] = useState<Message[]>([]);
+  const [selectedPhone, setSelectedPhone] = useState("");
+  const [selectedRemoteJid, setSelectedRemoteJid] = useState("");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [pauseSeconds, setPauseSeconds] = useState(18000);
@@ -247,6 +139,26 @@ export default function CRMPage() {
   const [isSending, setIsSending] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+
+  useEffect(() => {
+    let isActive = true;
+    async function loadLeads() {
+      const { data, error } = await supabase.from("leads_pipeline").select("*").order("updated_at", { ascending: false });
+      if (!isActive) return;
+      if (error) {
+        setApiFeedback(`Falha ao carregar leads: ${error.message}`);
+        return;
+      }
+      const realLeads = (data ?? []) as LeadsPipeline[];
+      setLeads(realLeads);
+      if (!selectedPhone && realLeads[0]?.phone) {
+        setSelectedPhone(realLeads[0].phone);
+        setSelectedRemoteJid(`${realLeads[0].phone}@s.whatsapp.net`);
+      }
+    }
+    void loadLeads();
+    return () => { isActive = false; };
+  }, [selectedPhone]);
 
   useEffect(() => {
     let isActive = true;
@@ -328,8 +240,8 @@ export default function CRMPage() {
   }, [selectedPhone, selectedRemoteJid]);
 
   const selectedLead = useMemo(
-    () => leads.find((lead) => lead.phone === selectedPhone) ?? leads[0],
-    [selectedPhone],
+    () => leads.find((lead) => lead.phone === selectedPhone) ?? leads[0] ?? emptyLead,
+    [leads, selectedPhone],
   );
   const selectedContact = contacts.find((contact) => contact.telefone === selectedPhone);
 
@@ -409,7 +321,7 @@ export default function CRMPage() {
           </div>
           <h1 className="mt-1 text-2xl font-bold text-white">Pipeline e controle da IA</h1>
           <p className="text-sm text-slate-400">
-            Layout estatico preparado para Supabase, Redis e Evolution API via rotas server-side.
+            Conversas reais da Evolution vinculadas aos leads do Supabase pelo telefone.
           </p>
         </div>
 
@@ -436,7 +348,7 @@ export default function CRMPage() {
       <section className="min-h-[210px] overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/70 p-3 custom-scrollbar">
         <div className="flex h-full min-w-max gap-3">
           {stages.map((stage) => {
-            const stageLeads = leads.filter((lead) => lead.status === stage.id);
+            const stageLeads = leads.filter((lead) => commercialStage(lead.status) === stage.id);
             return (
               <div key={stage.id} className="w-72 shrink-0">
                 <div className="mb-2 flex items-center justify-between px-1">
@@ -616,6 +528,11 @@ export default function CRMPage() {
           </div>
 
           <div className="border-t border-slate-800 p-3">
+            {selectedLead.automation_contact_allowed === false && (
+              <div className="mb-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                Este contato pediu para não receber automações. Mensagem manual continua permitida com atenção.
+              </div>
+            )}
             <div className="flex items-end gap-2">
               <textarea
                 value={draft}
@@ -626,7 +543,7 @@ export default function CRMPage() {
               />
               <button
                 onClick={sendMessage}
-                disabled={isSending || !draft.trim()}
+                disabled={isSending || !draft.trim() || !selectedPhone}
                 className="flex h-12 items-center gap-2 rounded-lg bg-cyan-500 px-4 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
