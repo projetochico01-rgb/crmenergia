@@ -1,6 +1,7 @@
 'use client';
 
 import { Bell, Search, User } from 'lucide-react';
+import { LogoutButton } from '@/components/layout/logout-button';
 
 export function Navbar() {
   return (
@@ -30,6 +31,7 @@ export function Navbar() {
           <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center border border-slate-700">
             <User className="w-6 h-6 text-slate-400" />
           </div>
+          <LogoutButton />
         </div>
       </div>
     </header>

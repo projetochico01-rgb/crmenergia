@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { sendTextMessage } from "@/lib/evolution";
 import { pauseAgent } from "@/lib/redis";
+import { requireApiUser } from "@/lib/api-auth";
 
 const HUMAN_HANDOFF_SECONDS = 18000;
 
 export async function POST(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
+
   try {
     const body = (await request.json()) as {
       telefone?: string;

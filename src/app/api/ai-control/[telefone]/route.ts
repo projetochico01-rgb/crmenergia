@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPauseKey, getPauseTtl, pauseAgent, wakeAgent } from "@/lib/redis";
+import { requireApiUser } from "@/lib/api-auth";
 
 type RouteContext = {
   params: Promise<{
@@ -12,6 +13,9 @@ function sanitizeTelefone(value: string) {
 }
 
 export async function GET(_request: Request, context: RouteContext) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
+
   try {
     const { telefone: rawTelefone } = await context.params;
     const telefone = sanitizeTelefone(rawTelefone);
@@ -32,6 +36,9 @@ export async function GET(_request: Request, context: RouteContext) {
 }
 
 export async function POST(request: Request, context: RouteContext) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
+
   try {
     const { telefone: rawTelefone } = await context.params;
     const telefone = sanitizeTelefone(rawTelefone);
@@ -59,6 +66,9 @@ export async function POST(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
+
   try {
     const { telefone: rawTelefone } = await context.params;
     const telefone = sanitizeTelefone(rawTelefone);
