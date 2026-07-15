@@ -251,7 +251,7 @@ export default function LeadsPage() {
     const url = URL.createObjectURL(blob);
 
     link.setAttribute('href', url);
-    link.setAttribute('download', `leads-atrioz-${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `leads-behub-${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();

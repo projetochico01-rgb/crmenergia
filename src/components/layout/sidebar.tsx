@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -58,11 +59,14 @@ export function Sidebar() {
 
   return (
     <aside className="w-64 h-screen bg-[#020617] border-r border-slate-800 flex flex-col fixed left-0 top-0 z-50">
-      <div className="p-6 flex items-center gap-3">
-        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-          <Zap className="text-white w-5 h-5 fill-white" />
+      <div className="p-5 flex items-center gap-3">
+        <div className="h-11 w-11 overflow-hidden rounded-xl bg-white p-1 shadow-lg shadow-amber-400/10">
+          <Image src="/behub-symbol.png" alt="Símbolo BeHub" width={44} height={44} className="h-full w-full object-contain" priority />
         </div>
-        <span className="text-xl font-bold tracking-tight text-white">Atrioz CRM</span>
+        <div>
+          <span className="block text-xl font-bold tracking-tight text-white">BeHub</span>
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-400">CRM Energia</span>
+        </div>
       </div>
 
       <nav className="flex-1 px-4 overflow-y-auto">

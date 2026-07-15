@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Atrioz CRM",
-  description: "Painel omnichannel com controle de IA",
+  title: "BeHub CRM",
+  description: "CRM de energia compartilhada da BeHub",
+  icons: {
+    icon: "/behub-symbol.png",
+    apple: "/behub-symbol.png",
+  },
 };
 
 export default function RootLayout({

@@ -2,7 +2,8 @@
 
 import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Eye, EyeOff, Loader2, LockKeyhole, Mail, Zap } from "lucide-react";
+import Image from "next/image";
+import { Eye, EyeOff, Loader2, LockKeyhole, Mail } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 function LoginForm() {
@@ -36,13 +37,13 @@ function LoginForm() {
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#020617] px-4 py-12">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.2),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(6,182,212,0.12),transparent_30%)]" />
       <section className="relative w-full max-w-md rounded-3xl border border-slate-800 bg-slate-950/85 p-8 shadow-2xl shadow-black/40 backdrop-blur-xl">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 shadow-lg shadow-blue-600/25">
-            <Zap className="h-6 w-6 fill-white text-white" />
+        <div className="mb-8 flex items-center gap-4">
+          <div className="h-16 w-16 overflow-hidden rounded-2xl bg-white p-1 shadow-lg shadow-amber-400/20">
+            <Image src="/behub-symbol.png" alt="Símbolo BeHub" width={64} height={64} className="h-full w-full object-contain" priority />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white">Atrioz CRM</h1>
-            <p className="text-sm text-slate-500">Acesso administrativo</p>
+            <h1 className="text-2xl font-bold text-white">BeHub</h1>
+            <p className="text-sm font-medium text-amber-400">CRM Energia Compartilhada</p>
           </div>
         </div>
 
@@ -101,7 +102,7 @@ function LoginForm() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#f5b800] px-4 py-3 font-semibold text-slate-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {isSubmitting ? "Entrando..." : "Entrar no CRM"}

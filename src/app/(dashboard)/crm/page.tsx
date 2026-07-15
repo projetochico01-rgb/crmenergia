@@ -405,7 +405,7 @@ export default function CRMPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cyan-300">
             <ShieldCheck className="h-4 w-4" />
-            CRM Atrioz Omnichannel
+            BeHub Omnichannel
           </div>
           <h1 className="mt-1 text-2xl font-bold text-white">Pipeline e controle da IA</h1>
           <p className="text-sm text-slate-400">
