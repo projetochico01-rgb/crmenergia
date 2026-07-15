@@ -24,8 +24,8 @@ export function Navbar() {
         
         <div className="flex items-center gap-3 pl-2">
           <div className="text-right hidden sm:block">
-            <p className="text-sm font-medium text-slate-200">Admin Talos</p>
-            <p className="text-xs text-slate-500">Super Admin</p>
+            <p className="text-sm font-medium text-slate-200">Operador Atrioz</p>
+            <p className="text-xs text-slate-500">Atendimento</p>
           </div>
           <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center border border-slate-700">
             <User className="w-6 h-6 text-slate-400" />

@@ -2,6 +2,7 @@ import {
   Users, 
   DollarSign
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const stats = [
   { 
@@ -86,6 +87,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-// Add cn helper import
-import { cn } from '@/lib/utils';

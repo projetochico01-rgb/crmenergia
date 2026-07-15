@@ -10,7 +10,7 @@ import {
   ChevronRight,
   Zap,
   UserCheck,
-  ArrowRightLeft
+  MessagesSquare
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -22,7 +22,7 @@ const menuGroups = [
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
       { icon: Users, label: 'Leads', href: '/leads' },
-      { icon: ArrowRightLeft, label: 'CRM', href: '/crm' },
+      { icon: MessagesSquare, label: 'Omnichannel', href: '/crm' },
     ]
   },
   {
@@ -45,7 +45,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     'Menu Principal': true,
-    'Unidades de Negócio': true,
+    'Gestão': true,
     'Configurações': true,
   });
 
@@ -62,7 +62,7 @@ export function Sidebar() {
         <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
           <Zap className="text-white w-5 h-5 fill-white" />
         </div>
-        <span className="text-xl font-bold tracking-tight text-white">Talos ERP</span>
+        <span className="text-xl font-bold tracking-tight text-white">Atrioz CRM</span>
       </div>
 
       <nav className="flex-1 px-4 overflow-y-auto">
