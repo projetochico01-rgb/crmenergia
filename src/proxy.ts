@@ -29,6 +29,12 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isLogin = pathname === "/login";
   const isApi = pathname.startsWith("/api/");
+  const isMachineApi = pathname === "/api/leads/intake" || pathname.startsWith("/api/cadence/");
+
+  // Machine-to-machine routes authenticate their own Bearer tokens.
+  if (!user && isMachineApi) {
+    return response;
+  }
 
   if (!user && isApi) {
     return NextResponse.json({ error: "Nao autorizado." }, { status: 401 });
