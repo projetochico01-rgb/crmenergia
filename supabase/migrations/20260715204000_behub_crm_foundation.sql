@@ -374,7 +374,9 @@ begin
     raise exception 'Cadence must have at least one allowed weekday';
   end if;
 
-  for day_offset in 0..14 loop
+  -- Start on the previous local day so an overnight window remains valid
+  -- after midnight (for example Monday 22:00 through Tuesday 06:00).
+  for day_offset in -1..14 loop
     window_start_at := date_trunc('day', base_local) + day_offset * interval '1 day' + start_time;
     window_end_at := date_trunc('day', base_local) + day_offset * interval '1 day' + end_time;
     if end_time < start_time then
