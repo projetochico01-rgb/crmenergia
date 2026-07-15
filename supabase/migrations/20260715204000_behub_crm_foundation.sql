@@ -21,10 +21,18 @@ create table if not exists public.crm_user_profiles (
   updated_at timestamptz not null default now()
 );
 
-insert into public.crm_user_profiles (user_id, display_name, role)
-select id, coalesce(raw_user_meta_data ->> 'name', email), 'admin'
+insert into public.crm_user_profiles (user_id, display_name, role, active)
+select id,
+  case email
+    when 'josimar.riskoski@gmail.com' then 'Josimar Riskoski'
+    when 'projetochico01@gmail.com' then 'Projeto Chico'
+    else coalesce(raw_user_meta_data ->> 'name', split_part(email, '@', 1))
+  end,
+  'admin', true
 from auth.users
-on conflict (user_id) do nothing;
+where email in ('josimar.riskoski@gmail.com', 'projetochico01@gmail.com')
+on conflict (user_id) do update
+set display_name = excluded.display_name, role = 'admin', active = true, updated_at = now();
 
 create or replace function public.crm_is_admin()
 returns boolean
@@ -95,6 +103,36 @@ alter table public.leads_pipeline
   add column if not exists closed_value numeric(14,2),
   add column if not exists updated_at timestamptz not null default now();
 
+do $$
+declare
+  status_attribute smallint;
+  constraint_name text;
+begin
+  select attnum into status_attribute
+  from pg_attribute
+  where attrelid = 'public.leads_pipeline'::regclass and attname = 'status' and not attisdropped;
+
+  for constraint_name in
+    select conname
+    from pg_constraint
+    where conrelid = 'public.leads_pipeline'::regclass
+      and contype = 'c'
+      and status_attribute = any(conkey)
+  loop
+    execute format('alter table public.leads_pipeline drop constraint %I', constraint_name);
+  end loop;
+end $$;
+
+update public.leads_pipeline
+set phone = case
+  when regexp_replace(phone, '\D', '', 'g') ~ '^55\d{10,11}$'
+    then '+' || regexp_replace(phone, '\D', '', 'g')
+  when regexp_replace(phone, '\D', '', 'g') ~ '^\d{10,11}$'
+    then '+55' || regexp_replace(phone, '\D', '', 'g')
+  else phone
+end
+where phone is not null and phone <> '';
+
 update public.leads_pipeline
 set status = case status
   when 'em_atendimento_ia' then 'contato'
@@ -104,6 +142,10 @@ set status = case status
   else status
 end
 where status in ('em_atendimento_ia','atendimento_humano','analise_fatura','contrato_enviado');
+
+alter table public.leads_pipeline
+  add constraint leads_pipeline_status_check
+  check (status in ('novo','contato','qualificado','proposta','negociacao','fechado','perdido'));
 
 update public.leads_pipeline
 set first_source = coalesce(first_source, utm_source, origem),
@@ -174,6 +216,13 @@ create table if not exists public.message_templates (
   updated_at timestamptz not null default now(),
   unique (name, version)
 );
+
+insert into public.message_templates (name, body, version, approved, active)
+values
+  ('Retomada curta', 'Oi, {{nome}}! Passando para saber se conseguiu ver minha última mensagem. Posso continuar sua análise de economia?', 1, true, true),
+  ('Lembrete de análise', 'Olá, {{nome}}! Ainda consigo preparar sua análise de economia de energia. Quer que eu siga por aqui?', 1, true, true),
+  ('Encerramento gentil', 'Oi, {{nome}}! Vou encerrar este acompanhamento por enquanto para não incomodar. Se quiser retomar sua análise, é só responder esta mensagem.', 1, true, true)
+on conflict (name, version) do nothing;
 
 create table if not exists public.cadence_config (
   id uuid primary key default gen_random_uuid(),
@@ -302,21 +351,6 @@ create table if not exists public.integration_idempotency (
   response_body jsonb,
   created_at timestamptz not null default now()
 );
-
-insert into public.crm_user_profiles (user_id, full_name, role, active)
-select user_id, full_name, 'admin', true
-from (
-  select id as user_id,
-    case email
-      when 'josimar.riskoski@gmail.com' then 'Josimar Riskoski'
-      when 'projetochico01@gmail.com' then 'Projeto Chico'
-      else coalesce(raw_user_meta_data ->> 'name', split_part(email, '@', 1))
-    end as full_name
-  from auth.users
-  where email in ('josimar.riskoski@gmail.com', 'projetochico01@gmail.com')
-) users_to_seed
-on conflict (user_id) do update
-set full_name = excluded.full_name, role = 'admin', active = true, updated_at = now();
 
 create or replace function public.cadence_next_allowed_at(
   base_at timestamptz,

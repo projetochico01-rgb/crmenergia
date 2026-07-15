@@ -152,8 +152,9 @@ export default function CRMPage() {
       const realLeads = (data ?? []) as LeadsPipeline[];
       setLeads(realLeads);
       if (!selectedPhone && realLeads[0]?.phone) {
-        setSelectedPhone(realLeads[0].phone);
-        setSelectedRemoteJid(`${realLeads[0].phone}@s.whatsapp.net`);
+        const phone = realLeads[0].phone.replace(/\D/g, "");
+        setSelectedPhone(phone);
+        setSelectedRemoteJid(`${phone}@s.whatsapp.net`);
       }
     }
     void loadLeads();
@@ -240,7 +241,7 @@ export default function CRMPage() {
   }, [selectedPhone, selectedRemoteJid]);
 
   const selectedLead = useMemo(
-    () => leads.find((lead) => lead.phone === selectedPhone) ?? leads[0] ?? emptyLead,
+    () => leads.find((lead) => lead.phone?.replace(/\D/g, "") === selectedPhone.replace(/\D/g, "")) ?? leads[0] ?? emptyLead,
     [leads, selectedPhone],
   );
   const selectedContact = contacts.find((contact) => contact.telefone === selectedPhone);
@@ -370,7 +371,7 @@ export default function CRMPage() {
                       <button
                         key={lead.id}
                         onClick={() => {
-                          const phone = lead.phone ?? "";
+                          const phone = lead.phone?.replace(/\D/g, "") ?? "";
                           setSelectedPhone(phone);
                           setSelectedRemoteJid(`${phone}@s.whatsapp.net`);
                         }}
