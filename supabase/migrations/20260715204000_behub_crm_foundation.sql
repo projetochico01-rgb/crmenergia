@@ -303,6 +303,21 @@ create table if not exists public.integration_idempotency (
   created_at timestamptz not null default now()
 );
 
+insert into public.crm_user_profiles (user_id, full_name, role, active)
+select user_id, full_name, 'admin', true
+from (
+  select id as user_id,
+    case email
+      when 'josimar.riskoski@gmail.com' then 'Josimar Riskoski'
+      when 'projetochico01@gmail.com' then 'Projeto Chico'
+      else coalesce(raw_user_meta_data ->> 'name', split_part(email, '@', 1))
+    end as full_name
+  from auth.users
+  where email in ('josimar.riskoski@gmail.com', 'projetochico01@gmail.com')
+) users_to_seed
+on conflict (user_id) do update
+set full_name = excluded.full_name, role = 'admin', active = true, updated_at = now();
+
 create or replace function public.cadence_next_allowed_at(
   base_at timestamptz,
   target_timezone text,
