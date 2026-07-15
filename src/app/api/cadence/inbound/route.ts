@@ -23,7 +23,7 @@ export async function POST(request: Request) {
           inbound_at: body.inboundAt ?? new Date().toISOString(),
         });
     if (error) throw error;
-    return NextResponse.json(data);
+    return NextResponse.json({ result: data, leadId: body.leadId, blocked: Boolean(body.optOut) });
   } catch (error) {
     return cadenceError(error);
   }
