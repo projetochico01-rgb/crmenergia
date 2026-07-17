@@ -50,6 +50,98 @@ body {
   font-family: var(--font-sans);
 }
 
+button,
+a,
+input,
+select,
+textarea {
+  outline-color: #fbbf24;
+  outline-offset: 2px;
+}
+
+.control {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid #1e293b;
+  border-radius: 0.75rem;
+  background: #020617;
+  padding: 0.65rem 0.8rem;
+  color: #f8fafc;
+  font-size: 0.875rem;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.control:focus-visible {
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 3px rgb(251 191 36 / 15%);
+  outline: none;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.button-primary,
+.button-secondary {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  transition: background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.button-primary {
+  background: #fbbf24;
+  color: #020617;
+}
+
+.button-primary:hover {
+  background: #fcd34d;
+}
+
+.button-secondary {
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.button-secondary:hover {
+  border-color: #64748b;
+  background: #1e293b;
+}
+
+.button-primary:disabled,
+.button-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.panel {
+  border: 1px solid #1e293b;
+  border-radius: 0.9rem;
+  background: #0f172a;
+  padding: 1rem;
+}
+
+.panel-title {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
@@ -66,4 +158,3 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
-

@@ -1,67 +1,60 @@
 'use client';
 
-import Link from 'next/link';
 import Image from 'next/image';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard,
-  Users,
-  DollarSign,
-  Settings,
+  BarChart3,
   ChevronRight,
-  Zap,
-  UserCheck,
-  MessagesSquare,
+  FileText,
+  LayoutDashboard,
   ListRestart,
+  MessagesSquare,
+  PlugZap,
+  ScrollText,
+  Settings2,
+  ShieldCheck,
+  Users,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-
 import { useState } from 'react';
+import { cn } from '@/lib/utils';
 
 const menuGroups = [
   {
-    label: 'Menu Principal',
+    label: 'Operação',
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
       { icon: Users, label: 'Leads', href: '/leads' },
-      { icon: MessagesSquare, label: 'Omnichannel', href: '/crm' },
-    ]
+      { icon: MessagesSquare, label: 'Atendimento', href: '/crm' },
+      { icon: BarChart3, label: 'Campanhas', href: '/campaigns' },
+    ],
   },
   {
-    label: 'Gestão',
+    label: 'Administração',
+    admin: true,
     items: [
-      { icon: UserCheck, label: 'Clientes', href: '/clients' },
-      { icon: DollarSign, label: 'Financeiro', href: '/billing' },
-    ]
-  },
-  {
-    label: 'Configurações',
-    items: [
+      { icon: ShieldCheck, label: 'Usuários', href: '/settings/users' },
+      { icon: FileText, label: 'Templates', href: '/settings/templates' },
       { icon: ListRestart, label: 'Cadência', href: '/settings/cadence' },
-      { icon: Zap, label: 'Automações', href: '/automations' },
-      { icon: Settings, label: 'Configurações', href: '/settings' },
-    ]
-  }
+      { icon: ScrollText, label: 'Auditoria', href: '/settings/audit' },
+      { icon: PlugZap, label: 'Integrações', href: '/settings/integrations' },
+      { icon: Settings2, label: 'Conversões Meta', href: '/settings/conversions' },
+    ],
+  },
 ];
 
-export function Sidebar() {
+export const navigationGroups = menuGroups;
+
+export function Sidebar({ role }: { role: 'admin' | 'atendente' }) {
   const pathname = usePathname();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    'Menu Principal': true,
-    'Gestão': true,
-    'Configurações': true,
+    Operação: true,
+    Administração: true,
   });
 
-  const toggleGroup = (label: string) => {
-    setExpandedGroups(prev => ({
-      ...prev,
-      [label]: !prev[label]
-    }));
-  };
-
   return (
-    <aside className="w-64 h-screen bg-[#020617] border-r border-slate-800 flex flex-col fixed left-0 top-0 z-50">
-      <div className="p-5 flex items-center gap-3">
+    <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 flex-col border-r border-slate-800 bg-[#020617] md:flex">
+      <div className="flex items-center gap-3 p-5">
         <div className="h-11 w-11 overflow-hidden rounded-xl bg-white p-1 shadow-lg shadow-amber-400/10">
           <Image src="/behub-symbol.png" alt="Símbolo BeHub" width={44} height={44} className="h-full w-full object-contain" priority />
         </div>
@@ -71,48 +64,27 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 px-4 overflow-y-auto">
-        {menuGroups.map((group, idx) => {
+      <nav className="custom-scrollbar flex-1 overflow-y-auto px-4" aria-label="Navegação principal">
+        {menuGroups.filter((group) => !group.admin || role === 'admin').map((group) => {
           const isExpanded = expandedGroups[group.label];
           return (
-            <div key={group.label} className={cn("mb-6", idx === 0 ? "mt-0" : "mt-6")}>
+            <div key={group.label} className="mb-6">
               <button
-                onClick={() => toggleGroup(group.label)}
-                className="w-full flex items-center justify-between px-3 mb-2 group-hover:text-slate-300 transition-colors"
+                type="button"
+                onClick={() => setExpandedGroups((current) => ({ ...current, [group.label]: !current[group.label] }))}
+                className="mb-2 flex w-full items-center justify-between px-3 py-1 text-slate-500 transition hover:text-slate-300"
+                aria-expanded={isExpanded}
               >
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                  {group.label}
-                </p>
-                <ChevronRight
-                  className={cn(
-                    "w-3 h-3 text-slate-500 transition-transform duration-200",
-                    isExpanded ? "rotate-90" : ""
-                  )}
-                />
+                <span className="text-[10px] font-bold uppercase tracking-widest">{group.label}</span>
+                <ChevronRight className={cn('h-3 w-3 transition-transform', isExpanded && 'rotate-90')} />
               </button>
-
-              <div className={cn(
-                "space-y-1 overflow-hidden transition-all duration-300 ease-in-out",
-                isExpanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
-              )}>
+              <div className={cn('space-y-1 overflow-hidden transition-all', isExpanded ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0')}>
                 {group.items.map((item) => {
-                  const isActive = pathname === item.href;
+                  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-200 group",
-                        isActive
-                          ? "bg-blue-600/10 text-blue-500"
-                          : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <item.icon className={cn("w-5 h-5", isActive ? "text-blue-500" : "text-slate-400 group-hover:text-slate-200")} />
-                        <span className="font-medium">{item.label}</span>
-                      </div>
-                      {isActive && <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                    <Link key={item.href} href={item.href} className={cn('flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition', isActive ? 'bg-amber-400/10 text-amber-300' : 'text-slate-400 hover:bg-slate-800/60 hover:text-white')}>
+                      <item.icon className="h-5 w-5" />
+                      {item.label}
                     </Link>
                   );
                 })}
@@ -122,13 +94,13 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="p-4 mt-auto">
-        <div className="bg-slate-900/50 rounded-2xl p-4 border border-slate-800">
-          <p className="text-xs text-slate-500 font-medium mb-1">Status do Sistema</p>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-sm text-slate-300 font-medium">Operacional</span>
+      <div className="p-4">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+          <p className="mb-1 text-xs font-medium text-slate-500">Status do sistema</p>
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" /> CRM operacional
           </div>
+          <p className="mt-2 text-[11px] text-slate-600">Automações permanecem desligadas.</p>
         </div>
       </div>
     </aside>

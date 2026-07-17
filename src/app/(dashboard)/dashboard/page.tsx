@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bot, CircleDollarSign, Filter, Handshake, Loader2, RefreshCw, ShieldAlert, Target, TrendingUp, UserCheck, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { LeadsPipeline } from '@/types/database';
+import type { CrmUserProfile, LeadsPipeline } from '@/types/database';
 
 type Lead = LeadsPipeline;
 type Period = '7' | '30' | '90' | 'all';
@@ -32,6 +32,7 @@ function relativeTime(value: string | null | undefined, referenceNow: number) {
 
 export default function DashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [profiles, setProfiles] = useState<CrmUserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('30');
@@ -44,9 +45,13 @@ export default function DashboardPage() {
     setReferenceNow(new Date().getTime());
     setLoading(true);
     setError(null);
-    const { data, error: queryError } = await supabase.from('leads_pipeline').select('*').order('created_at', { ascending: false });
+    const [{ data, error: queryError }, { data: profileData }] = await Promise.all([
+      supabase.from('leads_pipeline').select('*').order('created_at', { ascending: false }),
+      supabase.from('crm_user_profiles').select('*').eq('active', true).order('display_name'),
+    ]);
     if (queryError) setError(queryError.message);
     else setLeads((data ?? []) as Lead[]);
+    setProfiles((profileData ?? []) as CrmUserProfile[]);
     setLoading(false);
   }, []);
 
@@ -109,7 +114,7 @@ export default function DashboardPage() {
         <label className="text-xs font-semibold text-slate-400"><span className="mb-2 flex items-center gap-1"><Filter className="h-3.5 w-3.5" /> Período</span><select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="all">Todo o período</option></select></label>
         <FilterSelect label="Origem" value={source} onChange={setSource} options={sourceOptions} all="Todas as origens" />
         <FilterSelect label="Campanha" value={campaign} onChange={setCampaign} options={campaignOptions} all="Todas as campanhas" />
-        <FilterSelect label="Responsável" value={owner} onChange={setOwner} options={['livre', ...ownerOptions]} all="Todos os responsáveis" format={(value) => value === 'livre' ? 'Fila livre' : `Usuário ${value.slice(0, 8)}`} />
+        <FilterSelect label="Responsável" value={owner} onChange={setOwner} options={['livre', ...ownerOptions]} all="Todos os responsáveis" format={(value) => value === 'livre' ? 'Fila livre' : profiles.find((profile) => profile.user_id === value)?.display_name ?? 'Usuário inativo'} />
       </section>
 
       {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
