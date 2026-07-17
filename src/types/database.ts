@@ -142,6 +142,122 @@ export interface CadenceStep {
   updated_at: string;
 }
 
+export interface CrmUserProfile {
+  [key: string]: unknown;
+  user_id: string;
+  display_name: string | null;
+  role: "admin" | "atendente";
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Campaign {
+  [key: string]: unknown;
+  id: string;
+  provider: string;
+  external_id: string | null;
+  name: string;
+  source: string | null;
+  medium: string | null;
+  active: boolean;
+  metadata: Json;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignAd {
+  [key: string]: unknown;
+  id: string;
+  campaign_id: string | null;
+  external_adset_id: string | null;
+  external_ad_id: string | null;
+  name: string | null;
+  metadata: Json;
+  created_at: string;
+}
+
+export interface LeadCadence {
+  [key: string]: unknown;
+  id: string;
+  lead_id: string;
+  cadence_config_id: string;
+  status: "waiting" | "active" | "responded" | "completed" | "paused" | "cancelled" | "blocked";
+  current_step: number;
+  next_run_at: string | null;
+  last_inbound_at: string | null;
+  last_outbound_at: string | null;
+  started_at: string;
+  ended_at: string | null;
+  started_by: "diana";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CadenceAttempt {
+  [key: string]: unknown;
+  id: string;
+  lead_cadence_id: string;
+  cadence_step_id: string;
+  status: "scheduled" | "claimed" | "sent" | "cancelled" | "error";
+  scheduled_for: string;
+  claimed_at: string | null;
+  claimed_by: string | null;
+  sent_at: string | null;
+  evolution_message_id: string | null;
+  template_snapshot: string;
+  technical_attempts: number;
+  error_message: string | null;
+  idempotency_key: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrmMessage {
+  [key: string]: unknown;
+  id: string;
+  lead_id: string;
+  external_message_id: string | null;
+  channel: string;
+  direction: "inbound" | "outbound";
+  sender_type: "lead" | "diana" | "human" | "system";
+  body: string | null;
+  media_url: string | null;
+  media_type: string | null;
+  sent_at: string;
+  metadata: Json;
+  created_at: string;
+}
+
+export interface AuditLog {
+  [key: string]: unknown;
+  id: number;
+  actor_user_id: string | null;
+  actor_type: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  before_data: Json | null;
+  after_data: Json | null;
+  ip_address: string | null;
+  created_at: string;
+}
+
+export interface ConversionOutbox {
+  [key: string]: unknown;
+  id: string;
+  lead_id: string;
+  event_name: string;
+  event_id: string;
+  payload: Json;
+  status: "pending" | "sent" | "cancelled" | "error";
+  attempts: number;
+  available_at: string;
+  sent_at: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
 export interface BaseDeConhecimento {
   [key: string]: unknown;
   id: number;
@@ -156,6 +272,24 @@ export interface BaseDeConhecimento {
 export interface Database {
   public: {
     Tables: {
+      crm_user_profiles: {
+        Row: CrmUserProfile;
+        Insert: Omit<CrmUserProfile, "created_at" | "updated_at"> & Partial<Pick<CrmUserProfile, "created_at" | "updated_at">>;
+        Update: Partial<CrmUserProfile>;
+        Relationships: [];
+      };
+      campaigns: {
+        Row: Campaign;
+        Insert: Omit<Campaign, "id" | "created_at" | "updated_at"> & Partial<Pick<Campaign, "id" | "created_at" | "updated_at">>;
+        Update: Partial<Campaign>;
+        Relationships: [];
+      };
+      campaign_ads: {
+        Row: CampaignAd;
+        Insert: Omit<CampaignAd, "id" | "created_at"> & Partial<Pick<CampaignAd, "id" | "created_at">>;
+        Update: Partial<CampaignAd>;
+        Relationships: [];
+      };
       leads_pipeline: {
         Row: LeadsPipeline;
         Insert: Omit<LeadsPipeline, "id" | "created_at"> &
@@ -200,6 +334,36 @@ export interface Database {
         Row: CadenceStep;
         Insert: Omit<CadenceStep, "id" | "created_at" | "updated_at"> & Partial<Pick<CadenceStep, "id" | "created_at" | "updated_at">>;
         Update: Partial<CadenceStep>;
+        Relationships: [];
+      };
+      lead_cadences: {
+        Row: LeadCadence;
+        Insert: Omit<LeadCadence, "id" | "created_at" | "updated_at"> & Partial<Pick<LeadCadence, "id" | "created_at" | "updated_at">>;
+        Update: Partial<LeadCadence>;
+        Relationships: [];
+      };
+      cadence_attempts: {
+        Row: CadenceAttempt;
+        Insert: Omit<CadenceAttempt, "id" | "created_at" | "updated_at" | "idempotency_key"> & Partial<Pick<CadenceAttempt, "id" | "created_at" | "updated_at" | "idempotency_key">>;
+        Update: Partial<CadenceAttempt>;
+        Relationships: [];
+      };
+      crm_messages: {
+        Row: CrmMessage;
+        Insert: Omit<CrmMessage, "id" | "created_at" | "sent_at"> & Partial<Pick<CrmMessage, "id" | "created_at" | "sent_at">>;
+        Update: Partial<CrmMessage>;
+        Relationships: [];
+      };
+      audit_log: {
+        Row: AuditLog;
+        Insert: Omit<AuditLog, "id" | "created_at"> & Partial<Pick<AuditLog, "id" | "created_at">>;
+        Update: Partial<AuditLog>;
+        Relationships: [];
+      };
+      conversion_outbox: {
+        Row: ConversionOutbox;
+        Insert: Omit<ConversionOutbox, "id" | "event_id" | "created_at" | "available_at"> & Partial<Pick<ConversionOutbox, "id" | "event_id" | "created_at" | "available_at">>;
+        Update: Partial<ConversionOutbox>;
         Relationships: [];
       };
       base_de_conhecimento: {
