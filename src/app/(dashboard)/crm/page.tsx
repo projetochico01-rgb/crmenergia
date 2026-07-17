@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Bot,
   CalendarClock,
@@ -35,6 +36,8 @@ type Message = {
   papel: ConversationRole | "human";
   mensagem: string;
   criado_em: string;
+  messageType?: string;
+  status?: string;
 };
 
 type Contact = {
@@ -68,7 +71,9 @@ type EvolutionMessage = {
   text: string;
   messageType: string;
   createdAt: string | null;
+  status: string;
 };
+type ControlHistory = { id: number; action: string; actor_name: string; created_at: string };
 
 const stages: Array<{ id: LeadPipelineStatus; label: string; tone: string }> = [
   { id: "novo", label: "Novo", tone: "bg-sky-500" },
@@ -101,6 +106,7 @@ const pauseOptions = [
   { label: "5h", seconds: 18000 },
   { label: "12h", seconds: 43200 },
   { label: "24h", seconds: 86400 },
+  { label: "Indeterminado", seconds: 315360000 },
 ];
 
 function formatMoney(value: number | null) {
@@ -133,12 +139,16 @@ export default function CRMPage() {
   const [selectedPhone, setSelectedPhone] = useState("");
   const [selectedRemoteJid, setSelectedRemoteJid] = useState("");
   const [query, setQuery] = useState("");
+  const [conversationFilter, setConversationFilter] = useState<"all" | "unread" | "ai" | "human" | "optout">("all");
   const [draft, setDraft] = useState("");
   const [pauseSeconds, setPauseSeconds] = useState(18000);
   const [apiFeedback, setApiFeedback] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [messageLimit, setMessageLimit] = useState(40);
+  const [aiTtl, setAiTtl] = useState<number | null>(null);
+  const [controlHistory, setControlHistory] = useState<ControlHistory[]>([]);
 
   useEffect(() => {
     let isActive = true;
@@ -212,7 +222,7 @@ export default function CRMPage() {
       setIsLoadingMessages(true);
       try {
         const response = await fetch(
-          `/api/evolution/messages?remoteJid=${encodeURIComponent(selectedRemoteJid)}`,
+          `/api/evolution/messages?remoteJid=${encodeURIComponent(selectedRemoteJid)}&limit=${messageLimit}`,
         );
         const payload = (await response.json()) as { messages?: EvolutionMessage[]; error?: string };
         if (!response.ok) throw new Error(payload.error);
@@ -223,6 +233,8 @@ export default function CRMPage() {
           papel: message.fromMe ? ("human" as const) : ("user" as const),
           mensagem: message.text || `[${message.messageType}]`,
           criado_em: message.createdAt ?? new Date().toISOString(),
+          messageType: message.messageType,
+          status: message.status,
         }));
 
         if (isActive) setChatMessages(nextMessages);
@@ -238,18 +250,56 @@ export default function CRMPage() {
     return () => {
       isActive = false;
     };
-  }, [selectedPhone, selectedRemoteJid]);
+  }, [messageLimit, selectedPhone, selectedRemoteJid]);
 
   const selectedLead = useMemo(
-    () => leads.find((lead) => lead.phone?.replace(/\D/g, "") === selectedPhone.replace(/\D/g, "")) ?? leads[0] ?? emptyLead,
+    () => leads.find((lead) => lead.phone?.replace(/\D/g, "") === selectedPhone.replace(/\D/g, "")) ?? emptyLead,
     [leads, selectedPhone],
   );
   const selectedContact = contacts.find((contact) => contact.telefone === selectedPhone);
 
   const selectedMessages = chatMessages.filter((message) => message.telefone_cliente === selectedPhone);
-  const filteredContacts = contacts.filter((contact) =>
-    `${contact.nome_perfil} ${contact.telefone}`.toLowerCase().includes(query.toLowerCase()),
-  );
+  const leadForPhone = (phone: string) => leads.find((lead) => lead.phone?.replace(/\D/g, "") === phone.replace(/\D/g, ""));
+  const filteredContacts = contacts.filter((contact) => {
+    const lead = leadForPhone(contact.telefone);
+    const matchesText = `${contact.nome_perfil} ${contact.telefone}`.toLowerCase().includes(query.toLowerCase());
+    const matchesFilter = conversationFilter === "all" ||
+      (conversationFilter === "unread" && Boolean(contact.unreadCount)) ||
+      (conversationFilter === "ai" && lead?.ai_enabled !== false && !lead?.human_handoff) ||
+      (conversationFilter === "human" && Boolean(lead?.human_handoff || lead?.intervencao_humana)) ||
+      (conversationFilter === "optout" && lead?.automation_contact_allowed === false);
+    return matchesText && matchesFilter;
+  });
+
+  useEffect(() => {
+    if (!selectedPhone) return;
+    let active = true;
+    fetch(`/api/ai-control/${encodeURIComponent(selectedPhone)}`).then(async (response) => {
+      const payload = await response.json();
+      if (active && response.ok) setAiTtl(payload.ttl);
+    }).catch(() => { if (active) setAiTtl(null); });
+    return () => { active = false; };
+  }, [selectedPhone, apiFeedback]);
+
+  useEffect(() => {
+    if (!selectedLead.id) { const timer = window.setTimeout(() => setControlHistory([]), 0); return () => window.clearTimeout(timer); }
+    let active = true;
+    fetch(`/api/leads/${selectedLead.id}/control`).then(async (response) => { const payload = await response.json(); if (active && response.ok) setControlHistory(payload.history ?? []); }).catch(() => { if (active) setControlHistory([]); });
+    return () => { active = false; };
+  }, [selectedLead.id, apiFeedback]);
+
+  async function controlLead(action: "handoff" | "return_to_ai" | "opt_out" | "clear_opt_out") {
+    if (!selectedLead.id) return;
+    let reason: string | undefined;
+    if (action === "opt_out") reason = window.prompt("Motivo do pedido para não incomodar:") ?? undefined;
+    if (action === "clear_opt_out") reason = window.prompt("Justificativa administrativa para corrigir o opt-out:") ?? undefined;
+    if ((action === "opt_out" || action === "clear_opt_out") && !reason?.trim()) return;
+    const response = await fetch(`/api/leads/${selectedLead.id}/control`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, reason }) });
+    const payload = await response.json();
+    if (!response.ok) return setApiFeedback(payload.error ?? "Ação não realizada.");
+    setLeads((current) => current.map((lead) => lead.id === selectedLead.id ? payload.lead : lead));
+    setApiFeedback("Estado do atendimento atualizado e auditado.");
+  }
 
   async function pauseIa() {
     setApiFeedback("Enviando pausa para o Redis...");
@@ -261,7 +311,9 @@ export default function CRMPage() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
+      await supabase.from("leads_pipeline").update({ ai_enabled: false }).eq("id", selectedLead.id);
       setApiFeedback(`IA pausada por ${Math.round(pauseSeconds / 3600)}h.`);
+      setLeads((current) => current.map((lead) => lead.id === selectedLead.id ? { ...lead, ai_enabled: false } : lead));
     } catch (error) {
       setApiFeedback(error instanceof Error ? error.message : "Falha ao pausar IA.");
     }
@@ -275,6 +327,10 @@ export default function CRMPage() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
+      if (!selectedLead.human_handoff && selectedLead.automation_contact_allowed !== false) {
+        await supabase.from("leads_pipeline").update({ ai_enabled: true }).eq("id", selectedLead.id);
+        setLeads((current) => current.map((lead) => lead.id === selectedLead.id ? { ...lead, ai_enabled: true } : lead));
+      }
       setApiFeedback("IA reativada para este telefone.");
     } catch (error) {
       setApiFeedback(error instanceof Error ? error.message : "Falha ao reativar IA.");
@@ -301,9 +357,12 @@ export default function CRMPage() {
           papel: "human",
           mensagem: draft,
           criado_em: new Date().toISOString(),
+          messageType: "conversation",
+          status: "sent",
         },
       ]);
       setDraft("");
+      setLeads((current) => current.map((lead) => lead.id === selectedLead.id ? { ...lead, ai_enabled: false, human_handoff: true, intervencao_humana: true, cadence_status: lead.cadence_status === "active" || lead.cadence_status === "waiting" ? "paused" : lead.cadence_status } : lead));
       setApiFeedback(payload.warning ?? "Mensagem enviada. Trava de 5h aplicada no Redis.");
     } catch (error) {
       setApiFeedback(error instanceof Error ? error.message : "Falha ao enviar mensagem.");
@@ -313,8 +372,8 @@ export default function CRMPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-112px)] min-h-[760px] flex-col gap-4 overflow-hidden">
-      <header className="flex items-center justify-between gap-4">
+    <div className="flex min-h-[calc(100vh-112px)] flex-col gap-4 xl:h-[calc(100vh-112px)] xl:min-h-[760px] xl:overflow-hidden">
+      <header className="flex flex-col items-start justify-between gap-4 lg:flex-row lg:items-center">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cyan-300">
             <ShieldCheck className="h-4 w-4" />
@@ -326,7 +385,7 @@ export default function CRMPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 text-right">
+        <div className="grid w-full grid-cols-3 gap-2 text-right lg:w-auto">
           <div className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-2">
             <p className="text-[10px] uppercase text-slate-500">Leads</p>
             <p className="text-lg font-semibold text-white">{leads.length}</p>
@@ -406,8 +465,8 @@ export default function CRMPage() {
         </div>
       </section>
 
-      <section className="grid min-h-0 flex-1 grid-cols-[280px_minmax(420px,1fr)_330px] overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
-        <aside className="flex min-h-0 flex-col border-r border-slate-800">
+      <section className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-lg border border-slate-800 bg-slate-950 xl:grid-cols-[280px_minmax(420px,1fr)_330px]">
+        <aside className="flex min-h-[360px] flex-col border-b border-slate-800 xl:min-h-0 xl:border-b-0 xl:border-r">
           <div className="border-b border-slate-800 p-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
@@ -418,6 +477,9 @@ export default function CRMPage() {
                 placeholder="Buscar contato"
               />
             </div>
+            <select className="control mt-2" value={conversationFilter} onChange={(event) => setConversationFilter(event.target.value as typeof conversationFilter)} aria-label="Filtrar conversas">
+              <option value="all">Todas as conversas</option><option value="unread">Não lidas</option><option value="ai">IA ativa</option><option value="human">Atendimento humano</option><option value="optout">Opt-out</option>
+            </select>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
@@ -484,12 +546,13 @@ export default function CRMPage() {
               </div>
             </div>
             <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-300">
-              {selectedLead.intervencao_humana ? <WifiOff className="h-4 w-4 text-rose-300" /> : <Bot className="h-4 w-4 text-emerald-300" />}
-              {selectedLead.intervencao_humana ? "Atendimento humano" : "IA monitorando"}
+              {selectedLead.human_handoff || selectedLead.intervencao_humana ? <WifiOff className="h-4 w-4 text-rose-300" /> : <Bot className="h-4 w-4 text-emerald-300" />}
+              {selectedLead.automation_contact_allowed === false ? "Opt-out" : selectedLead.human_handoff || selectedLead.intervencao_humana ? "Atendimento humano" : "IA monitorando"}
             </div>
           </div>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 custom-scrollbar">
+            {selectedMessages.length >= 40 && messageLimit < 200 && <button className="button-secondary mx-auto" onClick={() => setMessageLimit((current) => Math.min(current + 40, 200))}>Carregar mensagens anteriores</button>}
             {isLoadingMessages ? (
               <div className="flex h-full items-center justify-center text-sm text-slate-500">
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -520,7 +583,9 @@ export default function CRMPage() {
                         <span>{roleLabel(message.papel)}</span>
                         <span>{formatTime(message.criado_em)}</span>
                       </div>
+                      {message.messageType && !['conversation', 'extendedTextMessage'].includes(message.messageType) && <div className="mb-2 rounded-md border border-current/20 px-2 py-1 text-xs">{mediaLabel(message.messageType)}</div>}
                       <p className="text-sm leading-6">{message.mensagem}</p>
+                      {!isCustomer && <p className="mt-1 text-right text-[10px] opacity-60">{message.status === 'error' ? 'Falha no envio' : message.status === 'read' ? 'Lida' : message.status === 'delivered' ? 'Entregue' : 'Enviada'}</p>}
                     </div>
                   </div>
                 );
@@ -529,6 +594,7 @@ export default function CRMPage() {
           </div>
 
           <div className="border-t border-slate-800 p-3">
+            {!selectedLead.id && selectedPhone && <div className="mb-3 flex items-center justify-between rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100"><span>Esta conversa ainda não está vinculada a um lead.</span><Link className="font-bold underline" href={`/leads?newPhone=${encodeURIComponent(selectedPhone)}`}>Criar cadastro</Link></div>}
             {selectedLead.automation_contact_allowed === false && (
               <div className="mb-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
                 Este contato pediu para não receber automações. Mensagem manual continua permitida com atenção.
@@ -554,7 +620,7 @@ export default function CRMPage() {
           </div>
         </main>
 
-        <aside className="min-h-0 overflow-y-auto border-l border-slate-800 p-4 custom-scrollbar">
+        <aside className="min-h-0 overflow-y-auto border-t border-slate-800 p-4 custom-scrollbar xl:border-l xl:border-t-0">
           <div className="space-y-4">
             <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
               <div className="mb-3 flex items-center justify-between">
@@ -583,7 +649,7 @@ export default function CRMPage() {
                   pause_agent_{selectedPhone}
                 </p>
                 <p className="mt-2 text-xs text-slate-500">
-                  TTL exibira cronometro real quando conectado ao GET da rota.
+                  {aiTtl === null ? "Estado Redis indisponível" : aiTtl > 0 ? aiTtl > 315000000 ? "Pausa por tempo indeterminado" : `Pausa restante: ${Math.ceil(aiTtl / 60)} min` : "Sem pausa temporária no Redis"}
                 </p>
               </div>
 
@@ -616,12 +682,21 @@ export default function CRMPage() {
                 Acordar IA
               </button>
 
+              <div className="mt-3 grid gap-2">
+                <button onClick={() => void controlLead("handoff")} className="button-secondary">Transferir para humano</button>
+                <button onClick={() => void controlLead("return_to_ai")} className="button-secondary" disabled={selectedLead.automation_contact_allowed === false}>Devolver para IA</button>
+                {selectedLead.automation_contact_allowed === false ? <button onClick={() => void controlLead("clear_opt_out")} className="button-secondary text-rose-200">Corrigir opt-out (admin)</button> : <button onClick={() => void controlLead("opt_out")} className="button-secondary text-rose-200">Registrar pedido para não incomodar</button>}
+              </div>
+              {controlHistory.length > 0 && <details className="mt-3 rounded-lg bg-slate-950 p-3 text-xs"><summary className="cursor-pointer text-amber-300">Histórico de controle</summary><div className="mt-2 space-y-2">{controlHistory.map((item) => <p key={item.id} className="text-slate-400">{item.action.replaceAll('_', ' ')} · {item.actor_name} · {new Date(item.created_at).toLocaleString('pt-BR')}</p>)}</div></details>}
+
               {apiFeedback && (
                 <p className="mt-3 rounded-lg border border-slate-800 bg-slate-950 p-2 text-xs text-slate-300">
                   {apiFeedback}
                 </p>
               )}
             </section>
+
+            {selectedLead.automation_contact_allowed === false && <section className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4"><h3 className="font-semibold text-rose-200">Bloqueio permanente de automações</h3><p className="mt-2 text-xs text-rose-100">{selectedLead.do_not_contact_reason ?? "Motivo não informado"}</p><p className="mt-1 text-xs text-slate-500">{selectedLead.do_not_contact_at ? new Date(selectedLead.do_not_contact_at).toLocaleString("pt-BR") : "Data não informada"}</p></section>}
 
             <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
               <div className="mb-3 flex items-center gap-2">
@@ -700,4 +775,12 @@ function Meta({
       <p className="truncate font-medium text-slate-200">{value ?? "-"}</p>
     </div>
   );
+}
+
+function mediaLabel(type: string) {
+  if (type.toLowerCase().includes('audio')) return '🎧 Mensagem de áudio';
+  if (type.toLowerCase().includes('image')) return '🖼️ Imagem';
+  if (type.toLowerCase().includes('document')) return '📄 Documento';
+  if (type.toLowerCase().includes('video')) return '🎬 Vídeo';
+  return `Anexo · ${type}`;
 }

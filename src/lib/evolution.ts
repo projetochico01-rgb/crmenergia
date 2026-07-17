@@ -56,6 +56,7 @@ type EvolutionMessageRecord = {
   messageType?: string;
   message?: EvolutionMessagePayload;
   messageTimestamp?: number;
+  status?: string;
 };
 
 type EvolutionChatRecord = {
@@ -131,7 +132,7 @@ export async function fetchEvolutionChats() {
     });
 }
 
-export async function fetchEvolutionMessages(remoteJid: string) {
+export async function fetchEvolutionMessages(remoteJid: string, limit = 40) {
   if (!instance) {
     throw new Error("EVOLUTION_INSTANCE is not configured.");
   }
@@ -144,7 +145,7 @@ export async function fetchEvolutionMessages(remoteJid: string) {
         remoteJid,
       },
     },
-    limit: 40,
+    limit: Math.min(Math.max(limit, 20), 200),
   });
 
   return (data.messages?.records ?? [])
@@ -155,6 +156,7 @@ export async function fetchEvolutionMessages(remoteJid: string) {
       pushName: message.pushName ?? null,
       text: getTextFromMessage(message.message, message.messageType),
       messageType: message.messageType ?? "unknown",
+      status: message.status ?? (message.key?.fromMe ? "sent" : "received"),
       createdAt: timestampToIso(message.messageTimestamp),
     }))
     .sort((a, b) => {
