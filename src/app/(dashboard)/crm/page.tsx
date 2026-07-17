@@ -38,6 +38,8 @@ type Message = {
   criado_em: string;
   messageType?: string;
   status?: string;
+  mediaUrl?: string | null;
+  mediaMimeType?: string | null;
 };
 
 type Contact = {
@@ -72,6 +74,8 @@ type EvolutionMessage = {
   messageType: string;
   createdAt: string | null;
   status: string;
+  mediaUrl: string | null;
+  mediaMimeType: string | null;
 };
 type ControlHistory = { id: number; action: string; actor_name: string; created_at: string };
 
@@ -235,6 +239,8 @@ export default function CRMPage() {
           criado_em: message.createdAt ?? new Date().toISOString(),
           messageType: message.messageType,
           status: message.status,
+          mediaUrl: message.mediaUrl,
+          mediaMimeType: message.mediaMimeType,
         }));
 
         if (isActive) setChatMessages(nextMessages);
@@ -584,6 +590,7 @@ export default function CRMPage() {
                         <span>{formatTime(message.criado_em)}</span>
                       </div>
                       {message.messageType && !['conversation', 'extendedTextMessage'].includes(message.messageType) && <div className="mb-2 rounded-md border border-current/20 px-2 py-1 text-xs">{mediaLabel(message.messageType)}</div>}
+                      {message.mediaUrl && <MessageMedia url={message.mediaUrl} mimeType={message.mediaMimeType} />}
                       <p className="text-sm leading-6">{message.mensagem}</p>
                       {!isCustomer && <p className="mt-1 text-right text-[10px] opacity-60">{message.status === 'error' ? 'Falha no envio' : message.status === 'read' ? 'Lida' : message.status === 'delivered' ? 'Entregue' : 'Enviada'}</p>}
                     </div>
@@ -783,4 +790,11 @@ function mediaLabel(type: string) {
   if (type.toLowerCase().includes('document')) return '📄 Documento';
   if (type.toLowerCase().includes('video')) return '🎬 Vídeo';
   return `Anexo · ${type}`;
+}
+
+function MessageMedia({ url, mimeType }: { url: string; mimeType?: string | null }) {
+  if (mimeType?.startsWith('image/')) return <img src={url} alt="Imagem recebida na conversa" className="mb-2 max-h-64 rounded-lg object-contain" />; // eslint-disable-line @next/next/no-img-element
+  if (mimeType?.startsWith('audio/')) return <audio className="mb-2 max-w-full" controls src={url}>Seu navegador não reproduz este áudio.</audio>;
+  if (mimeType?.startsWith('video/')) return <video className="mb-2 max-h-64 max-w-full rounded-lg" controls src={url}>Seu navegador não reproduz este vídeo.</video>;
+  return <a href={url} target="_blank" rel="noreferrer" className="mb-2 block text-xs font-semibold underline">Abrir documento</a>;
 }

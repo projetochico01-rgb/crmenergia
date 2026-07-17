@@ -33,10 +33,10 @@ export async function sendTextMessage(telefone: string, text: string) {
 type EvolutionMessagePayload = Record<string, unknown> & {
   conversation?: string;
   extendedTextMessage?: { text?: string };
-  imageMessage?: { caption?: string };
-  videoMessage?: { caption?: string };
-  audioMessage?: { seconds?: number };
-  documentMessage?: { title?: string; fileName?: string; caption?: string };
+  imageMessage?: { caption?: string; url?: string; mimetype?: string };
+  videoMessage?: { caption?: string; url?: string; mimetype?: string };
+  audioMessage?: { seconds?: number; url?: string; mimetype?: string };
+  documentMessage?: { title?: string; fileName?: string; caption?: string; url?: string; mimetype?: string };
   stickerMessage?: Record<string, unknown>;
   templateMessage?: {
     hydratedTemplate?: { hydratedContentText?: string };
@@ -157,6 +157,8 @@ export async function fetchEvolutionMessages(remoteJid: string, limit = 40) {
       text: getTextFromMessage(message.message, message.messageType),
       messageType: message.messageType ?? "unknown",
       status: message.status ?? (message.key?.fromMe ? "sent" : "received"),
+      mediaUrl: message.message?.imageMessage?.url ?? message.message?.videoMessage?.url ?? message.message?.audioMessage?.url ?? message.message?.documentMessage?.url ?? null,
+      mediaMimeType: message.message?.imageMessage?.mimetype ?? message.message?.videoMessage?.mimetype ?? message.message?.audioMessage?.mimetype ?? message.message?.documentMessage?.mimetype ?? null,
       createdAt: timestampToIso(message.messageTimestamp),
     }))
     .sort((a, b) => {
